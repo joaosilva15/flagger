@@ -37,6 +37,7 @@ import (
 	v1alpha2 "github.com/fluxcd/flagger/pkg/apis/smi/v1alpha2"
 	v1alpha3 "github.com/fluxcd/flagger/pkg/apis/smi/v1alpha3"
 	traefikv1alpha1 "github.com/fluxcd/flagger/pkg/apis/traefik/v1alpha1"
+	traefikiov1alpha1 "github.com/fluxcd/flagger/pkg/apis/traefikio/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -144,6 +145,10 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		// Group=traefik.containo.us, Version=v1alpha1
 	case traefikv1alpha1.SchemeGroupVersion.WithResource("traefikservices"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Traefik().V1alpha1().TraefikServices().Informer()}, nil
+
+		// Group=traefikio, Version=v1alpha1
+	case traefikiov1alpha1.SchemeGroupVersion.WithResource("traefikservices"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Traefikio().V1alpha1().TraefikServices().Informer()}, nil
 
 	}
 

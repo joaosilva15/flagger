@@ -38,6 +38,7 @@ import (
 	splitv1alpha2 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/smi/v1alpha2"
 	splitv1alpha3 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/smi/v1alpha3"
 	traefikv1alpha1 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/traefik/v1alpha1"
+	traefikiov1alpha1 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/traefikio/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -61,6 +62,7 @@ type Interface interface {
 	SplitV1alpha2() splitv1alpha2.SplitV1alpha2Interface
 	SplitV1alpha3() splitv1alpha3.SplitV1alpha3Interface
 	TraefikV1alpha1() traefikv1alpha1.TraefikV1alpha1Interface
+	TraefikioV1alpha1() traefikiov1alpha1.TraefikioV1alpha1Interface
 }
 
 // Clientset contains the clients for groups.
@@ -82,6 +84,7 @@ type Clientset struct {
 	splitV1alpha2     *splitv1alpha2.SplitV1alpha2Client
 	splitV1alpha3     *splitv1alpha3.SplitV1alpha3Client
 	traefikV1alpha1   *traefikv1alpha1.TraefikV1alpha1Client
+	traefikioV1alpha1 *traefikiov1alpha1.TraefikioV1alpha1Client
 }
 
 // ApisixV2 retrieves the ApisixV2Client
@@ -162,6 +165,11 @@ func (c *Clientset) SplitV1alpha3() splitv1alpha3.SplitV1alpha3Interface {
 // TraefikV1alpha1 retrieves the TraefikV1alpha1Client
 func (c *Clientset) TraefikV1alpha1() traefikv1alpha1.TraefikV1alpha1Interface {
 	return c.traefikV1alpha1
+}
+
+// TraefikioV1alpha1 retrieves the TraefikioV1alpha1Client
+func (c *Clientset) TraefikioV1alpha1() traefikiov1alpha1.TraefikioV1alpha1Interface {
+	return c.traefikioV1alpha1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -272,6 +280,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 	if err != nil {
 		return nil, err
 	}
+	cs.traefikioV1alpha1, err = traefikiov1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 
 	cs.DiscoveryClient, err = discovery.NewDiscoveryClientForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
@@ -309,6 +321,7 @@ func New(c rest.Interface) *Clientset {
 	cs.splitV1alpha2 = splitv1alpha2.New(c)
 	cs.splitV1alpha3 = splitv1alpha3.New(c)
 	cs.traefikV1alpha1 = traefikv1alpha1.New(c)
+	cs.traefikioV1alpha1 = traefikiov1alpha1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs

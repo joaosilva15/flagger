@@ -1,0 +1,9 @@
+FROM alpine:3.21
+
+RUN apk --no-cache add ca-certificates
+
+USER nobody
+
+COPY --chown=nobody:nobody bin/flagger .
+
+ENTRYPOINT ["./flagger"]

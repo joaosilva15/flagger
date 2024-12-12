@@ -35,6 +35,7 @@ import (
 	splitv1alpha2 "github.com/fluxcd/flagger/pkg/apis/smi/v1alpha2"
 	splitv1alpha3 "github.com/fluxcd/flagger/pkg/apis/smi/v1alpha3"
 	traefikv1alpha1 "github.com/fluxcd/flagger/pkg/apis/traefik/v1alpha1"
+	traefikiov1alpha1 "github.com/fluxcd/flagger/pkg/apis/traefikio/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -62,6 +63,7 @@ var localSchemeBuilder = runtime.SchemeBuilder{
 	splitv1alpha2.AddToScheme,
 	splitv1alpha3.AddToScheme,
 	traefikv1alpha1.AddToScheme,
+	traefikiov1alpha1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition

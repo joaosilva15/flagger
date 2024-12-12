@@ -22,6 +22,7 @@ import (
 
 	flaggerv1 "github.com/fluxcd/flagger/pkg/apis/flagger/v1beta1"
 	traefikv1alpha1 "github.com/fluxcd/flagger/pkg/apis/traefik/v1alpha1"
+	traefikiov1alpha1 "github.com/fluxcd/flagger/pkg/apis/traefikio/v1alpha1"
 	clientset "github.com/fluxcd/flagger/pkg/client/clientset/versioned"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -40,8 +41,15 @@ type TraefikRouter struct {
 
 // Reconcile creates or updates the Traefik service
 func (tr *TraefikRouter) Reconcile(canary *flaggerv1.Canary) error {
-	apexName, primaryName, canaryName := canary.GetServiceNames()
+	err := tr.reconcileTraefik(canary)
+	if err != nil {
+		return err
+	}
+	return tr.reconcileTraefikio(canary)
+}
 
+func (tr *TraefikRouter) reconcileTraefik(canary *flaggerv1.Canary) error {
+	apexName, primaryName, canaryName := canary.GetServiceNames()
 	newSpec := traefikv1alpha1.ServiceSpec{
 		Weighted: &traefikv1alpha1.WeightedRoundRobin{
 			Services: []traefikv1alpha1.Service{
@@ -102,13 +110,20 @@ func (tr *TraefikRouter) Reconcile(canary *flaggerv1.Canary) error {
 	// update TraefikService but keep the original service weights
 	if traefikService != nil {
 		if len(traefikService.Spec.Weighted.Services) == 2 {
+			var weight uint = 0
+			for _, s := range newSpec.Weighted.Services {
+				if s.Name == canaryName {
+					weight = s.Weight
+					break
+				}
+			}
 			newSpec.Weighted.Services = append(
 				newSpec.Weighted.Services,
 				traefikv1alpha1.Service{
 					Name:      canaryName,
 					Namespace: canary.Namespace,
 					Port:      canary.Spec.Service.Port,
-					Weight:    100,
+					Weight:    weight,
 				},
 			)
 		}
@@ -138,6 +153,112 @@ func (tr *TraefikRouter) Reconcile(canary *flaggerv1.Canary) error {
 	return nil
 }
 
+func (tr *TraefikRouter) reconcileTraefikio(canary *flaggerv1.Canary) error {
+	apexName, primaryName, canaryName := canary.GetServiceNames()
+	newSpec := traefikv1alpha1.ServiceSpec{
+		Weighted: &traefikv1alpha1.WeightedRoundRobin{
+			Services: []traefikv1alpha1.Service{
+				{
+					Name:      primaryName,
+					Namespace: canary.Namespace,
+					Port:      canary.Spec.Service.Port,
+					Weight:    100,
+				},
+			},
+		},
+	}
+
+	newMetadata := canary.Spec.Service.Apex
+	if newMetadata == nil {
+		newMetadata = &flaggerv1.CustomMetadata{}
+	}
+	if newMetadata.Labels == nil {
+		newMetadata.Labels = make(map[string]string)
+	}
+	if newMetadata.Annotations == nil {
+		newMetadata.Annotations = make(map[string]string)
+	}
+	newMetadata.Annotations = filterMetadata(newMetadata.Annotations)
+
+	traefikService, err := tr.traefikClient.TraefikioV1alpha1().TraefikServices(canary.Namespace).Get(context.TODO(), apexName, metav1.GetOptions{})
+	if errors.IsNotFound(err) {
+		traefikService = &traefikiov1alpha1.TraefikService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        apexName,
+				Namespace:   canary.Namespace,
+				Labels:      newMetadata.Labels,
+				Annotations: newMetadata.Annotations,
+			},
+			Spec: newSpec,
+		}
+		if tr.setOwnerRefs {
+			traefikService.OwnerReferences = []metav1.OwnerReference{
+				*metav1.NewControllerRef(canary, schema.GroupVersionKind{
+					Group:   flaggerv1.SchemeGroupVersion.Group,
+					Version: flaggerv1.SchemeGroupVersion.Version,
+					Kind:    flaggerv1.CanaryKind,
+				}),
+			}
+		}
+
+		_, err = tr.traefikClient.TraefikioV1alpha1().TraefikServices(canary.Namespace).Create(context.TODO(), traefikService, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("TraefikService %s.%s create error: %w", apexName, canary.Namespace, err)
+		}
+		tr.logger.With("canary", fmt.Sprintf("%s.%s", canary.Name, canary.Namespace)).
+			Infof("TraefikService %s.%s created", traefikService.GetName(), canary.Namespace)
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("TraefikService %s.%s get query error: %w", apexName, canary.Namespace, err)
+	}
+
+	// update TraefikService but keep the original service weights
+	if traefikService != nil {
+		if len(traefikService.Spec.Weighted.Services) == 2 {
+
+			var weight uint = 0
+			for _, s := range newSpec.Weighted.Services {
+				if s.Name == canaryName {
+					weight = s.Weight
+					break
+				}
+			}
+			newSpec.Weighted.Services = append(
+				newSpec.Weighted.Services,
+				traefikv1alpha1.Service{
+					Name:      canaryName,
+					Namespace: canary.Namespace,
+					Port:      canary.Spec.Service.Port,
+					Weight:    weight,
+				},
+			)
+		}
+
+		specDiff := cmp.Diff(
+			newSpec,
+			traefikService.Spec,
+			cmpopts.IgnoreFields(traefikv1alpha1.Service{}, "Weight"),
+		)
+		labelsDiff := cmp.Diff(newMetadata.Labels, traefikService.Labels, cmpopts.EquateEmpty())
+		annotationsDiff := cmp.Diff(newMetadata.Annotations, traefikService.Annotations, cmpopts.EquateEmpty())
+		if specDiff != "" || labelsDiff != "" || annotationsDiff != "" {
+			clone := traefikService.DeepCopy()
+			clone.Spec = newSpec
+			clone.ObjectMeta.Annotations = newMetadata.Annotations
+			clone.ObjectMeta.Labels = newMetadata.Labels
+
+			_, err = tr.traefikClient.TraefikioV1alpha1().TraefikServices(canary.Namespace).Update(context.TODO(), clone, metav1.UpdateOptions{})
+			if err != nil {
+				return fmt.Errorf("TraefikService %s.%s update error: %w", apexName, canary.Namespace, err)
+			}
+			tr.logger.With("canary", fmt.Sprintf("%s.%s", canary.Name, canary.Namespace)).
+				Infof("TraefikService %s.%s updated", traefikService.GetName(), canary.Namespace)
+		}
+	}
+
+	return nil
+}
+
 // GetRoutes returns the destinations weight for primary and canary
 func (tr *TraefikRouter) GetRoutes(canary *flaggerv1.Canary) (
 	primaryWeight int,
@@ -147,18 +268,37 @@ func (tr *TraefikRouter) GetRoutes(canary *flaggerv1.Canary) (
 ) {
 	apexName, primaryName, _ := canary.GetServiceNames()
 
-	traefikService, err := tr.traefikClient.TraefikV1alpha1().TraefikServices(canary.Namespace).Get(context.TODO(), apexName, metav1.GetOptions{})
-	if err != nil {
+	var services []traefikv1alpha1.Service
+
+	// Try new traefik first
+	traefikServiceV3, err := tr.traefikClient.TraefikioV1alpha1().TraefikServices(canary.Namespace).Get(context.TODO(), apexName, metav1.GetOptions{})
+	if err == nil {
+		if len(traefikServiceV3.Spec.Weighted.Services) < 1 {
+			err = fmt.Errorf("TraefikService %s.%s services not found", apexName, canary.Namespace)
+			return
+		}
+
+		services = traefikServiceV3.Spec.Weighted.Services
+	} else if !errors.IsNotFound(err) {
 		err = fmt.Errorf("TraefikService %s.%s query error: %w", apexName, canary.Namespace, err)
 		return
+	} else {
+
+		var traefikService *traefikv1alpha1.TraefikService
+		traefikService, err = tr.traefikClient.TraefikV1alpha1().TraefikServices(canary.Namespace).Get(context.TODO(), apexName, metav1.GetOptions{})
+		if err != nil {
+			err = fmt.Errorf("TraefikService %s.%s query error: %w", apexName, canary.Namespace, err)
+			return
+		}
+
+		if len(traefikService.Spec.Weighted.Services) < 1 {
+			err = fmt.Errorf("TraefikService %s.%s services not found", apexName, canary.Namespace)
+			return
+		}
+		services = traefikService.Spec.Weighted.Services
 	}
 
-	if len(traefikService.Spec.Weighted.Services) < 1 {
-		err = fmt.Errorf("TraefikService %s.%s services not found", apexName, canary.Namespace)
-		return
-	}
-
-	for _, s := range traefikService.Spec.Weighted.Services {
+	for _, s := range services {
 		if s.Name == primaryName {
 			primaryWeight = int(s.Weight)
 			canaryWeight = 100 - primaryWeight
@@ -166,7 +306,6 @@ func (tr *TraefikRouter) GetRoutes(canary *flaggerv1.Canary) (
 
 		}
 	}
-
 	return
 }
 
@@ -183,6 +322,11 @@ func (tr *TraefikRouter) SetRoutes(
 		return fmt.Errorf("RoutingRule %s.%s update failed: no valid weights", apexName, canary.Namespace)
 	}
 	traefikService, err := tr.traefikClient.TraefikV1alpha1().TraefikServices(canary.Namespace).Get(context.TODO(), apexName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("TraefikService %s.%s query error: %w", apexName, canary.Namespace, err)
+	}
+
+	traefikioService, err := tr.traefikClient.TraefikioV1alpha1().TraefikServices(canary.Namespace).Get(context.TODO(), apexName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("TraefikService %s.%s query error: %w", apexName, canary.Namespace, err)
 	}
@@ -205,8 +349,13 @@ func (tr *TraefikRouter) SetRoutes(
 	}
 
 	traefikService.Spec.Weighted.Services = services
+	traefikioService.Spec.Weighted.Services = services
 
 	_, err = tr.traefikClient.TraefikV1alpha1().TraefikServices(canary.Namespace).Update(context.TODO(), traefikService, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("TraefikService %s.%s update error: %w", apexName, canary.Namespace, err)
+	}
+	_, err = tr.traefikClient.TraefikioV1alpha1().TraefikServices(canary.Namespace).Update(context.TODO(), traefikioService, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("TraefikService %s.%s update error: %w", apexName, canary.Namespace, err)
 	}

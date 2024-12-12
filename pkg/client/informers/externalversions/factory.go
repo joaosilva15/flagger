@@ -37,6 +37,7 @@ import (
 	projectcontour "github.com/fluxcd/flagger/pkg/client/informers/externalversions/projectcontour"
 	smi "github.com/fluxcd/flagger/pkg/client/informers/externalversions/smi"
 	traefik "github.com/fluxcd/flagger/pkg/client/informers/externalversions/traefik"
+	traefikio "github.com/fluxcd/flagger/pkg/client/informers/externalversions/traefikio"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -277,6 +278,7 @@ type SharedInformerFactory interface {
 	Projectcontour() projectcontour.Interface
 	Split() smi.Interface
 	Traefik() traefik.Interface
+	Traefikio() traefikio.Interface
 }
 
 func (f *sharedInformerFactory) Apisix() apisix.Interface {
@@ -325,4 +327,8 @@ func (f *sharedInformerFactory) Split() smi.Interface {
 
 func (f *sharedInformerFactory) Traefik() traefik.Interface {
 	return traefik.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Traefikio() traefikio.Interface {
+	return traefikio.New(f, f.namespace, f.tweakListOptions)
 }
