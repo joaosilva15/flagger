@@ -52,6 +52,8 @@ import (
 	fakesplitv1alpha3 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/smi/v1alpha3/fake"
 	traefikv1alpha1 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/traefik/v1alpha1"
 	faketraefikv1alpha1 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/traefik/v1alpha1/fake"
+	traefikiov1alpha1 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/traefikio/v1alpha1"
+	faketraefikiov1alpha1 "github.com/fluxcd/flagger/pkg/client/clientset/versioned/typed/traefikio/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
@@ -191,4 +193,9 @@ func (c *Clientset) SplitV1alpha3() splitv1alpha3.SplitV1alpha3Interface {
 // TraefikV1alpha1 retrieves the TraefikV1alpha1Client
 func (c *Clientset) TraefikV1alpha1() traefikv1alpha1.TraefikV1alpha1Interface {
 	return &faketraefikv1alpha1.FakeTraefikV1alpha1{Fake: &c.Fake}
+}
+
+// TraefikioV1alpha1 retrieves the TraefikioV1alpha1Client
+func (c *Clientset) TraefikioV1alpha1() traefikiov1alpha1.TraefikioV1alpha1Interface {
+	return &faketraefikiov1alpha1.FakeTraefikioV1alpha1{Fake: &c.Fake}
 }
